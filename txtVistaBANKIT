@@ -1,0 +1,356 @@
+"create view vw_codeudores_fha as
+
+select 'cd_cliente' = c.no_cliente_cobis,
+       'cd_cuenta'  = a.no_prestamo,
+       'cd_rol'     = 'C'
+  from bankit..pr_rel_pr_cli    a,
+       bankit..pr_prestamos_fha b,
+       bankit..db_clientes      c
+ where a.no_prestamo             =     b.no_prestamo
+   and a.no_cliente              =     c.no_cliente
+   and b.status                 in     ('Activo','Incompleto')
+   and c.no_cliente_cobis  is not null
+   and codigo_relacion         <>      31
+
+create view vw_cuotas_fha as
+select
+    'cc_fecha_proceso'   = (select Convert(Char(10),fp_fecha,103) from cobis..ba_fecha_proceso ),
+    'cc_empresa'         = 'BAM',
+    'cc_agencia'         = convert(varchar(5),codigo_agencia),
+    'cc_plaza'           = convert(varchar(5),codigo_muni),
+    'cc_tipo_ident'      = (select case en_tipo_ced when 'PN' then 'P'
+                                                  when 'CU' then 'D'
+                                                  when 'CV' then 'C'
+                                                  when 'NI' then 'N'
+                                                  when 'PA' then 'A'
+                                                  when 'SI' then 'S'
+                                   end
+                              from db_clientes,cobis..cl_ente
+                             where no_cliente_cobis = en_ente
+                               and no_cliente       = b.no_cliente),
+    'cc_codigo_ident'    = (select convert(varchar(10),no_cliente_cobis) from db_clientes where no_cliente = b.no_cliente),
+    'cc_producto'        = '33',
+    'cc_subproducto'     = 'FHA',
+    'cc_toperacion'      = 'FHA_'+convert(varchar(5),codigo_clase),
+    'cc_operacion'       = Convert(varchar(10),b.no_prestamo),
+    'cc_orden_operacion' = '',
+    'cc_nro_dividendo'   = Convert(varchar(10),no_cuota),
+    'cc_fecha_apertura'  = Convert(char(10),fecha_cuota,103),
+    'cc_fecha_venccuota' = Convert(char(10),fecha_ven_pago,103),
+    'cc_fecha_canc'      = IsNull(convert(char(10),a.fecha_cancelacion,103),'null'),
+    'cc_fecha_ult_pago'  = IsNull(convert(char(10),a.fecha_cancelacion,103),'null'),
+    'cc_fecha_prox_pago' = (Select convert(char(10),fecha_cuota,103) from pr_cuotas where no_prestamo = a.no_prestamo
+                               and no_cuota = (select no_cuota from pr_cuotas where no_prestamo = a.no_prestamo and no_cuota = a.no_cuota)+1),
+    'cc_dias_vencido'    = (Select convert(char(5),datediff(day,fecha_ven_pago,getdate())) from pr_cuotas
+                             where no_prestamo = a.no_prestamo
+                               and no_cuota = a.no_cuota
+                               and status = 'Vencido'),
+    'cc_estatus'         = a.status,
+    'cc_tasa_int'        = convert(varchar(10),tasa_interes),
+    'cc_tasa_comision'   = convert(varchar(10),a.pago_com_banco),
+    'cc_cap_xpagar'      = convert(varchar(10),pago_capital),
+    'cc_int_xpagar'      = convert(varchar(10),pago_interes),
+    'cc_com_xpagar'      = convert(varchar(10),pago_imp_im),
+    'cc_mora_xpagar'     = convert(varchar(10),recargo_mora),
+    'cc_com_cobranza'    = convert(varchar(10),adicional), --26
+    'cc_desgravamen'     = convert(varchar(10),pago_seg_fha),
+    'cc_cap_xvencer'     = convert(varchar(10),pago_capital),
+    'cc_cap_vencido'     = isnull((select convert(varchar(10),pago_capital) from pr_cuotas where no_prestamo = a.no_prestamo 
+                           and no_cuota = a.no_cuota and status = 'Vencido'),'0'),
+    'cc_int_xvencer'     = convert(varchar(10),pago_interes),
+    'cc_int_vencido'     = isnull((select convert(varchar(10),pago_interes) from pr_cuotas where no_prestamo = a.no_prestamo 
+                                      and no_cuota = a.no_cuota and status = 'Vencido'),'0'),
+    'cc_com_xvencer'     = isnull(convert(varchar(10),flotante_usado),'0'),
+    'cc_com_vencido'     = isnull(convert(varchar(10),a.adelanto_capital),'0'),
+    'cc_monto_provision' = '0',
+    'cc_cap_proxcuota'   = isnull((select convert(varchar(10),pago_capital) from pr_cuotas where no_prestamo = a.no_prestamo
+                              and no_cuota = (select no_cuota from pr_cuotas where no_prestamo = a.no_prestamo and no_cuota = a.no_cuota)+1),'0'), 
+    'cc_int_proxcuota'   = isnull((select convert(varchar(10),pago_interes) from pr_cuotas where no_prestamo = a.no_prestamo
+                           and no_cuota = (select no_cuota from pr_cuotas where no_prestamo = a.no_prestamo and no_cuota = a.no_cuota)+1),'0'),
+    'cc_com_proxcuota'   = '0',
+    'cc_ind_cesantia'    = '0',
+    'cc_cesantia'        = convert(varchar(10),pago_seg_con)
+
+from pr_prestamos_fha b, pr_cuotas a 
+where a.no_prestamo = b.no_prestamo
+  and b.status in ('Activo','Incompleto')
+  and a.status in ('Pendiente','Vencido')
+--order by b.no_prestamo,a.no_cuota
+
+
+create view vw_garantias_fha as
+
+
+
+select 'cg_prestamo'        = no_prestamo,
+       'cg_fecha_proceso'	= convert(varchar(12),(select fp_fecha from cobis..ba_fecha_proceso),103),
+       'cg_empresa'		    = 'BAM',
+       'cg_codigo_ident'	= IsNull(no_cliente_cobis,0),
+       'cg_tipo_ident'		= (select en_tipo_ced from cobis..cl_ente where en_ente = b.no_cliente_cobis),
+       'cg_tipo_gar'		= '02',
+       'cg_valor_est'		= monto_avaluo,
+       'cg_descripcion'	    = cobis.dbo.FEliminarCaracter(' [TECHO]: '     + IsNull(tipo_techo,'')     +' [MUROS]: '   + IsNull(tipo_muros,'')                     +
+                              ' [CIMIENTOS]: ' + IsNull(tipo_simientos,'') +' [NIVELES]: ' + Convert(Varchar(5),IsNull(num_plantas,0)) + 
+                              ' [BANOS]: '     + Convert(Varchar(5),IsNull(num_banos,0))   + ' [DORMITORIOS]: ' + Convert(Varchar(5),IsNull(num_dormitorios,0)) ),
+       'cg_valor_actual'	= saldo_capital,
+       'cg_moneda'		    = 0
+  from bankit..pr_inmuebles     a,
+       bankit..db_clientes      b,
+       bankit..pr_prestamos_fha c
+ where a.no_cliente      = b.no_cliente
+   and a.no_cliente      = c.no_cliente
+   and a.pr_inmuebles_id = c.pr_inmuebles_id
+   and c.status    in ('Activo','Incompleto')
+
+
+--FIN CODIGO PARA CREAR ES SC
+---------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------
+
+--VERIFICACION FUE EXITOSA
+
+--DESPLIEGA FIN DE EJECUCION DE SCRIPT FECHA/HORA
+
+
+
+
+create view vw_obligaciones_fha as 
+
+select 
+'co_fecha_proceso' =bankit.dbo.fn_sql(""(select @w_return =  Convert(char(10),fp_fecha,103) from cobis..ba_fecha_proceso)""),
+'co_empresa' ='BAM',
+'co_agencia' =convert(varchar(5),codigo_agencia),
+'co_nombre_ofi' =(select nombre_1 from db_agencias where no_agencia = a.codigo_agencia),
+'co_plaza' =convert(varchar(5),codigo_muni),
+'co_cliente' =(select convert(varchar(10),no_cliente_cobis) from db_clientes where no_cliente = a.no_cliente),
+'co_tipo_ident' =(select case en_tipo_ced	when 'PN' then 'P'
+					when 'CU' then 'D'
+					when 'CV' then 'C'
+					when 'NI' then 'N'
+					when 'PA' then 'A'
+					when 'SI' then 'S' end               
+	from db_clientes,cobis..cl_ente where no_cliente_cobis = en_ente and no_cliente = a.no_cliente),
+'co_codigo_ident' =(select isnull(en_ced_ruc,en_cui) from db_clientes,cobis..cl_ente where no_cliente_cobis = en_ente and no_cliente = a.no_cliente),
+'co_producto' ='33',
+'co_subproducto' ='FHA', --10
+'co_toperacion' ='FHA_'+convert(varchar(5),codigo_clase),
+'co_operacion' =convert(char(10),no_prestamo),
+'co_orden_operacion' ='',
+'co_fecha_apertura' =isnull(convert(char(10),fecha_creacion,103),'null'),
+'co_fecha_vencoper' =isnull((select convert(char(10),fecha_ven_pago,103) from pr_cuotas
+				where no_prestamo = a.no_prestamo
+				  and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+						where no_prestamo = a.no_prestamo and status = 'Pendiente')),'null'),
+'co_fecha_canc' =isnull((select convert(char(10),fecha_ven_pago,103) from pr_cuotas
+	where no_prestamo = a.no_prestamo and no_cuota = (select max(no_cuota) from pr_cuotas where no_prestamo = a.no_prestamo)),'null'),
+'co_fecha_ult_pago' =isnull((select convert(char(10),max(fecha_cancelacion),103) from pr_cuotas where no_prestamo = a.no_prestamo),'null'),
+'co_fecha_prox_pago' =isnull((select convert(varchar(10),fecha_cuota,103) from pr_cuotas
+			where no_prestamo = a.no_prestamo
+			  and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+						where no_prestamo = a.no_prestamo and status = 'Pendiente')+1),'null'),
+'co_plazo' =(select convert(varchar(5),datediff(day,getdate(),fecha_ven_pago)) from pr_cuotas
+			where no_prestamo = a.no_prestamo
+			  and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+						where no_prestamo = a.no_prestamo and status = 'Pendiente')),
+'co_dias_vencido' =convert(varchar(5),
+                            isnull(datediff(day,(select min(fecha_ven_pago)
+                                                   from pr_cuotas
+                                                  where no_prestamo = a.no_prestamo
+                                                    and status      = 'Vencido'),(select fp_fecha from cobis..ba_fecha_proceso)),0)),
+'co_estatus' = convert(varchar(15),status),
+'co_tasa_int' =convert(char(5),tasa_int_act),
+'co_tasa_comision' =isnull(convert(varchar(12),(select Sum(isnull(pago_com_banco,0)) from pr_cuotas
+				where no_prestamo = a.no_prestamo
+				  and status = 'Vencido')),'0'),
+'co_valor_original' =convert(varchar(15),monto_prestamo),
+'co_cap_xpagar' =convert(varchar(15),saldo_capital),
+'co_int_xpagar' =convert(varchar(15),(select isnull(sum(pago_interes),0) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido') +
+			(select isnull(sum(pago_interes),0) from pr_cuotas where no_prestamo = a.no_prestamo
+			  and status = 'Pendiente')),
+'co_com_xpagar' =(select convert(varchar(15),isnull(sum(pago_imp_im),0)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),
+'co_mora_xpagar' =(select convert(varchar(15),isnull(sum(recargo_mora),0)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),
+
+'co_com_cobranza' =(select sum(IsNull(adicional,0))
+                        from pr_cuotas
+                       where no_prestamo   = a.no_prestamo
+                         and status       in ('Vencido','Pendiente')
+                         and fecha_cuota  <= cobis.dbo.FFinMes((select fp_fecha from cobis..ba_fecha_proceso))),
+
+'co_desgravamen' =(select sum(IsNull(pago_seg_fha,0))
+                        from pr_cuotas
+                       where no_prestamo   = a.no_prestamo
+                         and status       in ('Vencido')
+                         and fecha_cuota  <= cobis.dbo.FFinMes((select fp_fecha from cobis..ba_fecha_proceso))),
+'co_cuotas_xvencer' =(select convert(varchar(5),count(1)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Pendiente'), --30
+'co_cuotas_vencidas' =(select convert(varchar(5),count(1)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),
+'co_cap_xvencer' =(select convert(varchar(15),pago_capital) from pr_cuotas where no_prestamo = a.no_prestamo
+			  and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+					     where no_prestamo = a.no_prestamo and status = 'Pendiente')),
+'co_cap_vencido' =(select convert(varchar(15),isnull(sum(pago_capital),0)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),
+'co_int_xvencer' =(select convert(varchar(12),pago_interes) from pr_cuotas
+				where no_prestamo = a.no_prestamo
+				  and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+						where no_prestamo = a.no_prestamo and status = 'Pendiente')),
+'co_int_vencido' =(select convert(varchar(15),isnull(sum(pago_interes),0)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),
+
+'co_com_xvencer' =(select sum(IsNull(flotante_usado,0))
+                        from pr_cuotas
+                       where no_prestamo   = a.no_prestamo
+                         and status       in ('Vencido','Pendiente')
+                         and fecha_cuota  <= cobis.dbo.FFinMes((select fp_fecha from cobis..ba_fecha_proceso))),
+
+'co_com_vencido' =(select sum(IsNull(adelanto_capital,0))
+                        from pr_cuotas
+                       where no_prestamo   = a.no_prestamo
+                         and status       in ('Vencido','Pendiente')
+                         and fecha_cuota  <= cobis.dbo.FFinMes((select fp_fecha from cobis..ba_fecha_proceso))),
+'co_tipo_idcodeudor' =null,--39
+'co_id_codeudor' ='0',--(select top 1 convert(varchar(10),no_cliente_cobis) from cod_relacion_fha,db_clientes where cod_relacion_fha.no_cliente = db_clientes.no_cliente and no_prestamo = a.no_prestamo),
+'co_tipoid_garante1' =null,
+'co_id_garante1' =null,
+'co_tipoid_garante2' =null,
+'co_id_garante2' =convert(varchar(5),codigo_constructora),
+'co_tipo_garantia' =(select nombre from pr_constructoras where codigo_constructora = a.codigo_constructora),
+'co_monto_provision' =null,
+'co_cap_proxcuota' =(select convert(varchar(15),pago_capital) from pr_cuotas where no_prestamo = a.no_prestamo
+			  	and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+						  where no_prestamo = a.no_prestamo and status = 'Pendiente')+1),
+
+'co_int_proxcuota' =(select convert(varchar(15),pago_interes) from pr_cuotas where no_prestamo = a.no_prestamo
+			  	and no_cuota = (select min(no_cuota) from bankit..pr_cuotas 
+						  where no_prestamo = a.no_prestamo and status = 'Pendiente')+1),
+'co_com_proxcuota' ='0',
+'co_ind_cesantia' ='N',
+'co_cesantia' =(select convert(varchar(15),isnull(sum(pago_seg_con),0)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),--50
+'co_fecha_castigo' =null,
+'co_fecha_apertura_cta' =null,
+'co_nro_cta' =null,
+'co_estatus_cta' =null,
+'co_fecha_estatus_cta' =null,
+'co_desgravamen_venc' =(select convert(varchar(15),isnull(sum(pago_seg_fha),0)) from pr_cuotas where no_prestamo = a.no_prestamo and status = 'Vencido'),
+'co_tot_dividendos' =(select convert(varchar(5),count(1)) from pr_cuotas where no_prestamo = a.no_prestamo),
+'co_tipo_credito' =null,
+'co_reestructurado' ='N',
+'co_nro_reestruc' ='0',
+'co_castigado' ='N',
+'co_monto_castigado' ='0',
+'co_dividendo_cast' ='0', 
+'co_titularizada' ='N',
+'co_demanda' =IsNull(en_juridico,'N'),
+'co_dividendo_demand' ='0',
+'co_Credito_Facil' ='N',
+--(select nombre_agente from db_agentes where codigo_agente = a.codigo_agente),
+'co_Ejecutivo' =convert(varchar(5),codigo_agente),
+'co_DebitoAutomatico' = case when IsNull(tipo_cuenta_db,0) = 3 then 'MON'
+                             when IsNull(tipo_cuenta_db,0) = 4 then 'AHO'
+                        end +'-'+ no_cuenta_db,
+'co_moneda'       ='0',
+'co_gastos_admin' = 0,
+'co_gastos_doc'   = 0,
+'co_gastos_legal' = 0,
+'co_avaluo'       = 0,
+'co_seguro_vida'  = 0,
+'co_impuestos'    = 0,
+'co_otros_rubros' = 0,
+'co_telefono_1'	  = (cobis.dbo.RecorrerCadena2( isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 1 and te_secuencial = 1 and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) + ""and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) +"" and DataLength(te_valor) >= 8)"") ), 
+												isnull( (bankit.dbo.fn_sql(""(select @w_return"
+ = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 2 and te_secuencial = 1 and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) + "and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cl
+"iente) +"" and DataLength(te_valor) >= 8)"") ), 
+												isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 3 and te_secuencial = 1 and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) + ""and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) +"" and DataLength(te_valor) >= 8)"") ), '0'))), '0123456789')),
+'co_telefono_2'	  = (cobis.dbo.RecorrerCadena2( isnull( (bankit.dbo.fn_sql(""(sele"
+ct @w_return = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 1 and te_secuencial = 2 and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) + "and db_clientes.no_cliente = " + Convert(Varchar
+"(10),a.no_cliente) +"" and DataLength(te_valor) >= 8)"") ), 
+												isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 2 and te_secuencial = 2 and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) + ""and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) +"" and DataLength(te_valor) >= 8)"") ), 
+												isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_clientes, cobis"
+..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 3 and te_secuencial = 2 and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) + "and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) +" and DataLength(te_valor) 
+">= 8)"") ), '0'))), '0123456789')),
+'co_telefono_3'	  = (cobis.dbo.RecorrerCadena2( isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 1 and te_secuencial = 3 and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) + ""and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) +"" and DataLength(te_valor) >= 8)"") ), 
+												isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_cli"
+entes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 2 and te_secuencial = 3 and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) + "and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) +" and DataLengt
+"h(te_valor) >= 8)"") ), 
+												isnull( (bankit.dbo.fn_sql(""(select @w_return = te_valor from db_clientes, cobis..cl_telefono where no_cliente_cobis = te_ente and te_direccion = 3 and te_secuencial = 3 and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) + ""and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) +"" and DataLength(te_valor) >= 8)"") ), '0'))), '0123456789')),
+
+'co_email_1'      = str_replace(str_replace(isnull(bankit.dbo.fn_sql(""(select @w_return = max(di_descri"
+pcion) from db_clientes, cobis..cl_direccion where no_cliente_cobis = di_ente and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) + " and cobis..cl_direccion.di_tipo in ('MA','MAC') and cobis..cl_direccion.di_descripcion like '%@%')"),' '),
+"char(10),'' ),char(13),''),
+
+
+
+'co_email_2'      = str_replace(str_replace(case when (isnull(bankit.dbo.fn_sql(""(select @w_return = max(di_descripcion) from db_clientes, cobis..cl_direccion where no_cliente_cobis = di_ente and db_clientes.no_cliente = "" +"
+ Convert(Varchar(10),a.no_cliente) + " and cobis..cl_direccion.di_tipo in ('MA','MAC') and cobis..cl_direccion.di_descripcion like '%@%')"),'')) =(isnull(bankit.dbo.fn_sql("(select @w_return = min(di_descripcion) from db_clientes, cobis..cl_direccion wher
+"e no_cliente_cobis = di_ente and db_clientes.no_cliente = "" + Convert(Varchar(10),a.no_cliente) + "" and cobis..cl_direccion.di_tipo in ('MA','MAC') and cobis..cl_direccion.di_descripcion like '%@%')""),''))
+							then 
+							''
+							else 
+							isnull"
+(bankit.dbo.fn_sql("(select @w_return = min(di_descripcion) from db_clientes, cobis..cl_direccion where no_cliente_cobis = di_ente and db_clientes.no_cliente = " + Convert(Varchar(10),a.no_cliente) + " and cobis..cl_direccion.di_tipo in ('MA','MAC') and c
+"obis..cl_direccion.di_descripcion like '%@%')""),'')
+							end,char(10),'' ),char(13),''),
+'co_seg_desgravamen' = case  when  (select count(1) from bankit..pr_cuotas where no_prestamo = a.no_prestamo  and status = 'Vencido' )> 0
+							then 
+							
+						bankit.dbo.fn_sql(""(select @w_return = convert(varchar(20),isnull(sum(desgravamen),0)) from bankit..pr_cuotas where no_prestamo = '""+ a.no_prestamo +""' and status = 'Vencido')"")					
+						else 
+						convert(varchar(20),(select isnull(desgravamen,0) 
+						from bankit..pr_cuotas where no_prestamo = a.no_prestamo 
+						 and convert(varchar(10),no_cuota) = bankit.dbo.fn_sql(""(select @w_return = convert(varchar(8),min(no_cuota)) from bankit..pr_cuotas where no_prestamo ='""+  a.no_prestamo + ""' and status =  'Pendiente')"")))
+end   
+
+from bankit..pr_prestamos_fha a
+where status    in ('Activo','Incompleto')create view vw_pagos_det_fha as 
+
+select 'cf_fecha_proceso'  = (select Convert(Char(10),fp_fecha,103) from cobis..ba_fecha_proceso),
+       'cf_empresa'        = 'BAM',
+       'cf_secuencial'     = no_cuota,
+       'cf_producto'       = 33,
+       'cf_subproducto'    = 'FHA',
+       'cf_toperacion'     = (select 'FHA_' + Convert(Varchar(5),x.codigo_clase)
+                                from pr_prestamos_fha x,
+                                     db_clases        b
+                               where no_prestamo    = a.no_prestamo
+                                 and b.codigo_clase = x.codigo_clase),
+       'cf_operacion'      = no_prestamo,
+       'cf_fecha_pago'     = Convert(Char(10),fecha_cancelacion,103),
+       'cf_pago'           = total_pago,
+       'cf_descripcion'    = Convert(Varchar(50),comentario),
+       'cf_cta_pago'       = IsNull(Case tipo_cta_db when 3 then 'MON-' else 'AHO-' end + no_cuenta_db,'NULO'),
+       'cf_chq_pago'       = '',
+       'cf_bco_pago'       = '',
+       'cf_monto'          = total_pago
+  from bankit..pr_cuotas a,
+       cobis..cl_sac_fecha b
+ where fecha_cancelacion  = b.sf_fecha
+create view vw_pagos_fha as 
+
+select 'cp_fecha_proceso'  = (select Convert(Char(10),fp_fecha,103) from cobis..ba_fecha_proceso),
+       'cp_empresa'        = 'BAM',
+       'cp_secuencial'     = no_cuota,
+       'cp_producto'       = 33,
+       'cp_subproducto'    = 'FHA',
+       'cp_toperacion'     = (select 'FHA_' + Convert(Varchar(5),x.codigo_clase)
+                                from pr_prestamos_fha x,
+                                     db_clases        b
+                               where no_prestamo    = a.no_prestamo
+                                 and b.codigo_clase = x.codigo_clase),
+       'cp_operacion'      = no_prestamo,
+       'cp_fecha_venc'     = Convert(Varchar(10),fecha_ven_pago,103),
+       'cp_indice_cuota'   = no_cuota,
+       'cp_fecha_pago'     = Convert(Varchar(10),fecha_cancelacion,103),
+       'cp_agencia_pago'   = no_agencia,
+       'cp_tipo_pago'      = 'ALEMANA',
+       'cp_pago_total'     = total_pago,
+       'cp_pago_capital'   = pago_capital,
+       'cp_pago_interes'   = pago_interes,
+       'cp_pago_comision'  = pago_com_banco,
+       'cp_pago_mora'      = IsNull(recargo_mora,0),
+       'cp_pago_solca'     = IsNull(pago_seg_fha,0),
+       'cp_comision_cob'   = IsNull(pago_imp_im,0),
+       'cp_pago_segcesant' = IsNull(pago_seg_con,0),
+       'cp_operador'       = IsNull(usuario,'NULL'),
+       'cp_ejecucion'      = case when moneda_cta_db is not null then 'B' else 'L' end,
+       'cp_pagos_operaciones' = IsNull(adicional,0),
+       'cp_moneda'	       = 'GTQ'
+  from pr_cuotas a,
+       cobis..cl_sac_fecha b
+ where fecha_cancelacion   = b.sf_fecha
+"
